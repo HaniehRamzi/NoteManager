@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>مدیریت نوشته‌ها</title>
+    <link rel="icon" type="image/x-icon" href="https://img.icons8.com/?size=100&id=13910&format=png&color=000000">
+
+    <!-- استفاده از Bootstrap RTL -->
+
+    <link rel="stylesheet" href="https://cdn.rtlcss.com/bootstrap/v4.2.1/css/bootstrap.min.css">
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/rastikerdar/iranyekan@latest/css/iranyekan.css');
+
+        /* پس‌زمینه با گرادینت */
+        body {
+            font-family: 'IRANYekan', sans-serif;
+            direction: rtl;
+            text-align: right;
+            background: linear-gradient(to left, #2c3e50, #4ca1af);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* کارت مدیریت نوشته‌ها */
+        .card {
+            margin: 2rem;
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0px 5px 15px rgba(0, 0, 0, 0.2);
+            max-width: 500px;
+            width: 100%;
+        }
+
+        /* دکمه‌های زیباتر */
+        .btn {
+            border-radius: 8px;
+            padding: 8px 15px;
+            font-size: 16px;
+        }
+
+        /* فاصله بین دکمه‌های حذف و ویرایش */
+        .btn-group > button {
+            margin-right: 5px;
+        }
+
+        /* استایل لیست نوشته‌ها */
+        .list-group-item {
+            text-align: right;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+        }
+
+        /* افکت hover برای نوشته‌ها */
+        .list-group-item:hover {
+            background: #f8f9fa;
+            transform: scale(1.02);
+        }
+
+        /* ورودی ویرایش */
+        .edit-input {
+            width: 80%;
+            display: inline-block;
+        }
+
+        /* دکمه‌های ذخیره و لغو در حالت ویرایش */
+        .edit-btns {
+            margin-top: 5px;
+        }
+
+        /* دکمه دانلود دیتابیس */
+        #saveDbBtn {
+            display: block;
+            width: 100%;
+            margin-top: 10px;
+            background: #34495e;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+<div class="card">
+    <h2 class="mb-4 text-center">📌 مدیریت نوشته‌ها</h2>
+    <form id="noteForm">
+        <div class="form-group">
+            <textarea id="noteContent" class="form-control" placeholder="متن نوشته..." rows="3" required></textarea>
+        </div>
+        <button type="submit" class="btn btn-success btn-block">➕ افزودن نوشته</button>
+    </form>
+    <hr>
+    <h4 class="text-center">📝 لیست نوشته‌ها</h4>
+    <ul id="notesList" class="list-group mb-3"></ul>
+    <button id="saveDbBtn" class="btn">💾 دانلود دیتابیس (sqlite.sql)</button>
+
+    <br>
+    <div class="copyright-wrapper d-block mb-1 fs-8 text-center text-bold text-lg-start">
+        ساخته شده توسط تارا قادری و حانیه رمزی
+    </div>
+</div>
+
+<!-- بارگذاری SQL.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+<script>
+    let db;
+    let SQL;
+
+    function saveDatabaseToLocalStorage() {
+        const data = db.export();
+        let binary = '';
+        data.forEach(byte => binary += String.fromCharCode(byte));
+        const base64String = btoa(binary);
+        localStorage.setItem('notesDb', base64String);
+    }
+
+    function fetchNotes() {
+        const res = db.exec("SELECT * FROM notes");
+        const notesList = document.getElementById('notesList');
+        notesList.innerHTML = '';
+        if (res.length > 0) {
+            const values = res[0].values;
+            values.forEach(row => {
+                const li = document.createElement('li');
+                li.className = 'list-group-item d-flex justify-content-between align-items-center';
+
+                const span = document.createElement('span');
+                span.className = 'note-text';
+                span.textContent = row[1];
+                li.appendChild(span);
+
+                const btnGroup = document.createElement('div');
+                btnGroup.className = 'btn-group';
+
+                const editBtn = document.createElement('button');
+                editBtn.className = 'btn btn-info btn-sm';
+                editBtn.textContent = '✏️ ویرایش';
+                editBtn.onclick = () => editNote(row[0], li);
+                btnGroup.appendChild(editBtn);
+
+                const delBtn = document.createElement('button');
+                delBtn.className = 'btn btn-danger btn-sm';
+                delBtn.textContent = '🗑 حذف';
+                delBtn.onclick = () => deleteNote(row[0]);
+                btnGroup.appendChild(delBtn);
+
+                li.appendChild(btnGroup);
+                notesList.appendChild(li);
+            });
+        }
+    }
+
+    function addNote(content) {
+        const stmt = db.prepare("INSERT INTO notes (content) VALUES (?)");
+        stmt.run([content]);
+        stmt.free();
+        saveDatabaseToLocalStorage();
+        fetchNotes();
+    }
+
+    function deleteNote(id) {
+        const stmt = db.prepare("DELETE FROM notes WHERE id = ?");
+        stmt.run([id]);
+        stmt.free();
+        saveDatabaseToLocalStorage();
+        fetchNotes();
+    }
+
+    function updateNote(id, newContent) {
+        const stmt = db.prepare("UPDATE notes SET content = ? WHERE id = ?");
+        stmt.run([newContent, id]);
+        stmt.free();
+        saveDatabaseToLocalStorage();
+        fetchNotes();
+    }
+
+    function editNote(id, liElement) {
+        const currentText = liElement.querySelector('.note-text').textContent;
+        liElement.innerHTML = '';
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'form-control edit-input';
+        input.value = currentText;
+        input.style = 'margin-left: 1em';
+
+        liElement.appendChild(input);
+
+        const btnGroup = document.createElement('div');
+        btnGroup.className = 'edit-btns';
+
+        const saveBtn = document.createElement('button');
+        saveBtn.className = 'btn btn-success btn-sm';
+        saveBtn.textContent = '✔️ ذخیره';
+        saveBtn.style = 'margin-bottom: 1em';
+
+        saveBtn.onclick = () => {
+            const newContent = input.value.trim();
+            if (newContent !== '') updateNote(id, newContent);
+        };
+        btnGroup.appendChild(saveBtn);
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'btn btn-secondary btn-sm';
+        cancelBtn.textContent = '❌ لغو';
+        cancelBtn.onclick = () => fetchNotes();
+        btnGroup.appendChild(cancelBtn);
+
+        liElement.appendChild(btnGroup);
+    }
+
+    function downloadDatabase() {
+        const data = db.export();
+        const blob = new Blob([data], {type: 'application/octet-stream'});
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'sqlite.sql';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        }, 0);
+    }
+
+    async function initDatabase() {
+        SQL = await initSqlJs({
+            locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}`
+        });
+
+        const savedDb = localStorage.getItem('notesDb');
+        if (savedDb) {
+            const binaryString = atob(savedDb);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
+            db = new SQL.Database(bytes);
+        } else {
+            db = new SQL.Database();
+            db.run("CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY AUTOINCREMENT, content TEXT);");
+        }
+        fetchNotes();
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+        document.getElementById('noteForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const noteContent = document.getElementById('noteContent').value.trim();
+            if (noteContent !== '') {
+                addNote(noteContent);
+                document.getElementById('noteContent').value = '';
+            }
+        });
+
+        document.getElementById('saveDbBtn').addEventListener('click', downloadDatabase);
+
+        initDatabase();
+    });
+</script>
+</body>
+</html>
